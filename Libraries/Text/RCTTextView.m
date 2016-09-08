@@ -337,6 +337,10 @@ static NSAttributedString *removeReactTagFromString(NSAttributedString *string)
 - (BOOL)textView:(RCTUITextView *)textView shouldChangeTextInRange:(NSRange)range replacementText:(NSString *)text
 {
   if (textView.textContainer.maximumNumberOfLines > 0) {
+    if(textView.text.length < NSMaxRange(range)){
+      return NO;
+    }
+
     NSString *newText = [textView.text stringByReplacingCharactersInRange:range withString:text];
     CGSize boundingSize = CGSizeMake(self.frame.size.width, DBL_MAX);
     CGSize textSize = [newText boundingRectWithSize:boundingSize
