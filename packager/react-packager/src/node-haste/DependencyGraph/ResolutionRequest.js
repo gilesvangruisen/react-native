@@ -319,12 +319,8 @@ class ResolutionRequest {
 
     const resolveLocal = (name) => {
       if(name === modulePath) {
-        return Promise.resolve(fromModule.getPackage()).then(p => {
-          if (p) {
-            return p.redirectRequire(modulePath);
-          }
-          return modulePath;
-        });
+        return Promise.resolve(fromModule.getPackage())
+          .then(resolveRoot)
       }
 
       return name;
