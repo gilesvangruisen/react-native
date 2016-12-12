@@ -1903,6 +1903,74 @@ describe('DependencyGraph', function() {
         });
       });
 
+      it('should support deep browser mapping for packages ("' + fieldName + '")', function() {
+        var root = '/root';
+        setMockFileSystem({
+          'root': {
+            'index.js': [
+              '/**',
+              ' * @providesModule index',
+              ' */',
+              'require("aPackage")',
+            ].join('\n'),
+            'package.json': JSON.stringify(replaceBrowserField({
+              name: 'rootPackage',
+              browser: {
+                'node-package': 'browser-package',
+              }
+            }, fieldName)),
+            'aPackage': {
+              'package.json': JSON.stringify({
+                name: 'aPackage',
+              }),
+              'index.js': 'require("node-package")',
+            },
+            'node_modules': {
+              'browser-package': {
+                'package.json': JSON.stringify({
+                  'name': 'browser-package',
+                }),
+                'index.js': '/* some browser code */',
+              },
+            },
+          },
+        });
+
+        var dgraph = new DependencyGraph({
+          ...defaults,
+          roots: [root],
+        });
+        return getOrderedDependenciesAsJSON(dgraph, '/root/index.js').then(function(deps) {
+          expect(deps)
+            .toEqual([
+              { id: 'index',
+                path: '/root/index.js',
+                dependencies: ['aPackage'],
+                isAsset: false,
+                isJSON: false,
+                isPolyfill: false,
+                resolution: undefined,
+              },
+              { id: 'aPackage/index.js',
+                path: '/root/aPackage/index.js',
+                dependencies: ['node-package'],
+                isAsset: false,
+                isJSON: false,
+                isPolyfill: false,
+                resolution: undefined,
+              },
+              { id: 'browser-package/index.js',
+                path: '/root/node_modules/browser-package/index.js',
+                dependencies: [],
+                isAsset: false,
+                isJSON: false,
+                isPolyfill: false,
+                resolution: undefined,
+              },
+            ]);
+        });
+      });
+
       it('should support browser exclude of a package ("' + fieldName + '")', function() {
         ResolutionRequest.emptyModule = '/root/emptyModule.js';
         var root = '/root';
