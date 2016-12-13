@@ -310,25 +310,25 @@ class ResolutionRequest {
   }
 
   _redirectRequire(fromModule, modulePath, rootModule) {
-    const resolveRoot = (p) => {
-      if (p) {
-        return p.redirectRequire(modulePath);
-      }
-      return modulePath;
-    };
+    const localPkg = fromModule.getPackage()
+      const localRedirect = localPkg ? localPkg.redirectRequire(modulePath) : null
+      const rootPkg = rootModule.getPackage()
+      const rootRedirect = rootPkg ? rootPkg.redirectRequire(modulePath) : null
 
-    const resolveLocal = (name) => {
-      if(name === modulePath) {
-        return Promise.resolve(fromModule.getPackage())
-          .then(resolveRoot)
-      }
+      return Promise.all([
+        localRedirect,
+        rootRedirect
+      ]).then((redirects) => {
+        const [localRequire, rootRequire] = redirects
 
-      return name;
-    }
-
-    return Promise.resolve(rootModule.getPackage())
-      .then(resolveRoot)
-      .then(resolveLocal)
+        if (localRequire != null && localRequire !== modulePath) {
+          return localRequire
+        } else if (rootRequire != null && rootRequire !== modulePath) {
+          return rootRequire
+        } else {
+          return modulePath
+        }
+      })
   }
 
   _resolveFileOrDir(fromModule, toModuleName, rootModule) {
