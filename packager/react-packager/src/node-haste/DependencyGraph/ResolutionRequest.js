@@ -92,7 +92,7 @@ class ResolutionRequest {
   }
 
   // TODO(cpojer): Remove 'any' type. This is used for ModuleGraph/node-haste
-  resolveDependency(fromModule: Module | any, toModuleName: string) {
+  resolveDependency(fromModule: Module | any, toModuleName: string, rootModule: Module | any) {
     const resHash = resolutionHash(fromModule.path, toModuleName);
 
     if (this._immediateResolutionCache[resHash]) {
@@ -108,11 +108,11 @@ class ResolutionRequest {
         && !(isRelativeImport(toModuleName) || isAbsolutePath(toModuleName))) {
       return this._tryResolve(
         () => this._resolveHasteDependency(fromModule, toModuleName),
-        () => this._resolveNodeDependency(fromModule, toModuleName)
+        () => this._resolveNodeDependency(fromModule, toModuleName, rootModule)
       ).then(cacheResult);
     }
 
-    return this._resolveNodeDependency(fromModule, toModuleName)
+    return this._resolveNodeDependency(fromModule, toModuleName, rootModule)
       .then(cacheResult);
   }
 
@@ -130,6 +130,8 @@ class ResolutionRequest {
     const entry = this._moduleCache.getModule(this._entryPath);
 
     response.pushDependency(entry);
+    const rootModule = response.getRootDependency();
+
     let totalModules = 1;
     let finishedModules = 0;
 
@@ -137,7 +139,7 @@ class ResolutionRequest {
       module.getDependencies(transformOptions)
         .then(dependencyNames =>
           Promise.all(
-            dependencyNames.map(name => this.resolveDependency(module, name))
+            dependencyNames.map(name => this.resolveDependency(module, name, rootModule))
           ).then(dependencies => [dependencyNames, dependencies])
         );
 
@@ -267,21 +269,35 @@ class ResolutionRequest {
     });
   }
 
-  _redirectRequire(fromModule, modulePath) {
-    return Promise.resolve(fromModule.getPackage()).then(p => {
-      if (p) {
-        return p.redirectRequire(modulePath);
-      }
-      return modulePath;
-    });
+  _redirectRequire(fromModule, modulePath, rootModule) {
+      const localPkg = fromModule.getPackage()
+      const localRedirect = localPkg ? localPkg.redirectRequire(modulePath) : null
+      const rootPkg = rootModule.getPackage()
+      const rootRedirect = rootPkg ? rootPkg.redirectRequire(modulePath) : null
+
+      return Promise.all([
+        localRedirect,
+        rootRedirect
+      ]).then((redirects) => {
+        const [localRequire, rootRequire] = redirects
+
+        if (localRequire != null && localRequire !== modulePath) {
+          return localRequire
+        } else if (rootRequire != null && rootRequire !== modulePath) {
+          return rootRequire
+        } else {
+          return modulePath
+        }
+      })
+
   }
 
-  _resolveFileOrDir(fromModule, toModuleName) {
+  _resolveFileOrDir(fromModule, toModuleName, rootModule) {
     const potentialModulePath = isAbsolutePath(toModuleName) ?
         toModuleName :
         path.join(path.dirname(fromModule.path), toModuleName);
 
-    return this._redirectRequire(fromModule, potentialModulePath).then(
+    return this._redirectRequire(fromModule, potentialModulePath, rootModule).then(
       realModuleName => {
         if (realModuleName === false) {
           return this._loadAsFile(
@@ -299,11 +315,11 @@ class ResolutionRequest {
     );
   }
 
-  _resolveNodeDependency(fromModule, toModuleName) {
+  _resolveNodeDependency(fromModule, toModuleName, rootModule) {
     if (isRelativeImport(toModuleName) || isAbsolutePath(toModuleName)) {
-      return this._resolveFileOrDir(fromModule, toModuleName);
+      return this._resolveFileOrDir(fromModule, toModuleName, rootModule);
     } else {
-      return this._redirectRequire(fromModule, toModuleName).then(
+      return this._redirectRequire(fromModule, toModuleName, rootModule).then(
         realModuleName => {
           // exclude
           if (realModuleName === false) {
@@ -322,7 +338,7 @@ class ResolutionRequest {
               fromModule.path.indexOf('/', fromModuleParentIdx),
             );
             const absPath = path.join(fromModuleDir, realModuleName);
-            return this._resolveFileOrDir(fromModule, absPath);
+            return this._resolveFileOrDir(fromModule, absPath, rootModule);
           }
 
           const searchQueue = [];
